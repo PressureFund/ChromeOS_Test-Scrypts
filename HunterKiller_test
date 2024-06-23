@@ -1,0 +1,70 @@
+from web3 import Web3
+import logging
+
+# Connect to Ethereum node (replace with your node URL)
+infura_url = "https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID"
+web3 = Web3(Web3.HTTPProvider(infura_url))
+
+# ERC-20 token contract address (example: USDT)
+token_contract_address = "0xdac17f958d2ee523a2206206994597c13d831ec7"
+# Token ABI (Application Binary Interface)
+token_abi = '[...]'  # ERC-20 ABI JSON goes here
+
+# Initialize token contract
+token_contract = web3.eth.contract(address=token_contract_address, abi=token_abi)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+
+def monitor_transactions():
+    # Define the event signature for Transfer (ERC-20)
+    transfer_event_signature = web3.sha3(text="Transfer(address,address,uint256)").hex()
+
+    # Get the latest block number
+    latest_block = web3.eth.blockNumber
+
+    # Monitor new blocks
+    while True:
+        current_block = web3.eth.blockNumber
+        if current_block > latest_block:
+            logging.info(f"New block detected: {current_block}")
+            block = web3.eth.getBlock(current_block, full_transactions=True)
+            for tx in block.transactions:
+                # Check if the transaction is calling the ERC-20 token contract
+                if tx.to and tx.to.lower() == token_contract_address.lower():
+                    # Check if the transaction is a Transfer event
+                    if tx.input.startswith(transfer_event_signature):
+                        logging.info(f"Transfer detected in transaction: {tx.hash.hex()}")
+                        analyze_transaction(tx)
+            latest_block = current_block
+
+def analyze_transaction(tx):
+    # Decode transaction input data
+    try:
+        tx_data = token_contract.decode_function_input(tx.input)
+        if tx_data[0].fn_name == "transfer":
+            from_address = tx["from"]
+            to_address = tx_data[1]["_to"]
+            amount = tx_data[1]["_value"]
+            logging.info(f"Transfer from {from_address} to {to_address} of amount {amount}")
+            # Add your detection logic here (e.g., blacklist check, anomaly detection)
+            if is_suspicious(tx):
+                take_action(tx)
+    except Exception as e:
+        logging.error(f"Error decoding transaction: {e}")
+
+def is_suspicious(tx):
+    # Implement your detection logic
+    # For example, check if the transaction is from a known malicious address
+    suspicious_addresses = {"0x123...", "0xabc..."}
+    return tx["from"].lower() in suspicious_addresses
+
+def take_action(tx):
+    # Implement your response logic
+    # For example, alert the user or revert the transaction if possible
+    logging.warning(f"Suspicious transaction detected: {tx.hash.hex()}")
+    # Further actions can include notifying the user, freezing the account, etc.
+
+if __name__ == "__main__":
+    logging.info("Starting ERC-20 transaction monitor...")
+    monitor_transactions()
